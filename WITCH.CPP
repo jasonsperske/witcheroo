@@ -25,14 +25,12 @@ typedef int bool;
 
 /* Voodoo2 Memory Maps */
 #define VOODOO2_BASE_ADDR 0x10
-#define VOODOO2_FBI_INIT0 0x100
-#define VOODOO2_FBI_INIT1 0x104
-#define VOODOO2_FBI_INIT2 0x108
-#define VOODOO2_FBI_INIT3 0x10C
-#define VOODOO2_FBI_INIT4 0x110
-#define VOODOO2_FBI_INIT5 0x114
-#define VOODOO2_FBI_INIT6 0x118
-#define FBI_OFFSET 0x2400000
+#define VOODOO2_FBI_INIT0 0x210
+#define VOODOO2_FBI_INIT1 0x214
+#define VOODOO2_FBI_INIT2 0x218
+#define VOODOO2_FBI_INIT3 0x21C
+#define VOODOO2_FBI_INIT4 0x200
+#define FBI_OFFSET 0x400000
 
 /* Memory Test patterns */
 #define PATTERN1 0x55555555
@@ -166,6 +164,24 @@ unsigned long read_voodoo2_reg(unsigned long base_addr,
   return inportl(base_addr + reg);
 }
 
+void write_bAND_voodoo2_reg(unsigned long base_addr,
+                            unsigned long reg,
+                            unsigned long mask)
+{
+  write_voodoo2_reg(base_addr,
+                    reg,
+                    read_voodoo2_reg(base_addr, reg) & mask);
+}
+
+void write_bOR_voodoo2_reg(unsigned long base_addr,
+                           unsigned long reg,
+                           unsigned long mask)
+{
+  write_voodoo2_reg(base_addr,
+                    reg,
+                    read_voodoo2_reg(base_addr, reg) | mask);
+}
+
 unsigned long detect_framebuffer_size(unsigned long base_addr)
 {
   unsigned long test_patterns[] = {PATTERN1, PATTERN2, PATTERN3, PATTERN4};
@@ -187,22 +203,21 @@ unsigned long detect_framebuffer_size(unsigned long base_addr)
       /* Small delay to ensure memory settels */
       for (volatile int j = 0; j < 1000; j++)
 
-
-      readback = read_voodoo2_reg(base_addr + FBI_OFFSET, mem_tests[i]);
+        readback = read_voodoo2_reg(base_addr + FBI_OFFSET, mem_tests[i]);
 
       /* Verify base pattern wasn't corrupted (would indicate wrap) */
       if (readback != test_patterns[pattern_idx])
       {
-	printf("%08lX != %08lX\n", test_patterns[pattern_idx], readback);
-	printf("Memory wraps at %s - Found previous size\n", mem_test_names[i]);
-	return (i > 0) ? mem_test_sizes[i - 1] * 1024 * 1024 : 0;
+        printf("%08lX != %08lX\n", test_patterns[pattern_idx], readback);
+        printf("Memory wraps at %s - Found previous size\n", mem_test_names[i]);
+        return (i > 0) ? mem_test_sizes[i - 1] * 1024 * 1024 : 0;
       }
 
       readback = read_voodoo2_reg(base_addr + FBI_OFFSET, 0x0);
       if (readback != test_patterns[0])
       {
-	printf("Memory wrapped back to base - Found previous size\n");
-	return (i > 0) ? mem_test_sizes[i - 1] * 1024 * 1024 : 0;
+        printf("Memory wrapped back to base - Found previous size\n");
+        return (i > 0) ? mem_test_sizes[i - 1] * 1024 * 1024 : 0;
       }
     }
   }
@@ -214,17 +229,14 @@ unsigned long detect_framebuffer_size(unsigned long base_addr)
 void test_voodoo2(unsigned long base_addr)
 {
   printf("Initializing Voodoo2...\n");
-  write_voodoo2_reg(base_addr + FBI_OFFSET, VOODOO2_FBI_INIT0, 0x00000001);
+  // write_voodoo2_reg(base_addr + FBI_OFFSET, VOODOO2_FBI_INIT1, 0x00000001);
 
   /* Small delay to ensure memory settels */
-  for (volatile int j = 0; j < 1000; j++)
+  // for (volatile int j = 0; j < 1000; j++)
 
-
-  write_voodoo2_reg(base_addr, VOODOO2_FBI_INIT0, 0x00004000);
-  write_voodoo2_reg(base_addr, VOODOO2_FBI_INIT1, 0x00201102);
-  write_voodoo2_reg(base_addr, VOODOO2_FBI_INIT2, 0x00000600);
-  write_voodoo2_reg(base_addr, VOODOO2_FBI_INIT3, 0x00000000);
-  write_voodoo2_reg(base_addr, VOODOO2_FBI_INIT4, 0x00000000);
+  write_bOR_voodoo2_reg(base_addr, VOODOO2_FBI_INIT1, 0x100);
+  write_bOR_voodoo2_reg(base_addr, VOODOO2_FBI_INIT0, 6);
+  write_bAND_voodoo2_reg(base_addr, VOODOO2_FBI_INIT2, ~(1 << 22));
 
   unsigned long fb_size = detect_framebuffer_size(base_addr);
 }
@@ -248,16 +260,16 @@ void main()
     {
       if (is_voodoo2(bus, device, func))
       {
-	printf("Found a Voodoo2 card card on bus:%04X slot:%02X\n", bus, device);
+        printf("Found a Voodoo2 card card on bus:%04X slot:%02X\n", bus, device);
 
-	pci_data = pci_config_read_long(bus, device, func, PCI_COMMAND);
-	pci_data |= 0x0006; /* sets bits 1 (memory space) and 2 (Bus master) */
-	pci_config_write(bus, device, func, PCI_COMMAND, pci_data);
+        pci_data = pci_config_read_long(bus, device, func, PCI_COMMAND);
+        pci_data |= 0x0006; /* sets bits 1 (memory space) and 2 (Bus master) */
+        pci_config_write(bus, device, func, PCI_COMMAND, pci_data);
 
-	base_addr = pci_config_read_long(bus, device, func, VOODOO2_BASE_ADDR);
-	printf("Base address: %08lx\n", base_addr);
-	test_voodoo2(base_addr);
-	devices_found++;
+        base_addr = pci_config_read_long(bus, device, func, VOODOO2_BASE_ADDR);
+        printf("Base address: %08lx\n", base_addr);
+        test_voodoo2(base_addr);
+        devices_found++;
       }
     }
   }
